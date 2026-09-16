@@ -33,7 +33,7 @@ systemctl daemon-reload
 systemctl enable --now trident-panel
 # systemctl start подтверждает запуск процесса, но ещё не готовность HTTP.
 ready=false
-for attempt in {1..30}; do
+for ((attempt = 0; attempt < 30; attempt++)); do
   if /opt/trident-panel/runtime/node --input-type=module -e 'const r=await fetch("http://127.0.0.1:8787/healthz",{signal:AbortSignal.timeout(1000)}); if(!r.ok || (await r.json()).status!=="ok") process.exit(1)' >/dev/null 2>&1; then ready=true; break; fi
   sleep 1
 done
