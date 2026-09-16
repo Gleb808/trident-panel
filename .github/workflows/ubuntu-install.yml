@@ -1,0 +1,36 @@
+name: Ubuntu 24.04 installation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - deploy/**
+      - src/**
+      - test/**
+      - .github/workflows/ubuntu-install.yml
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check Bash syntax and lint
+        run: |
+          for script in deploy/bootstrap.sh deploy/install.sh test/install-smoke.sh; do bash -n "$script"; done
+          shellcheck -x -P SCRIPTDIR deploy/bootstrap.sh deploy/install.sh test/install-smoke.sh
+      - name: Install from this repository revision
+        run: sudo env TRIDENT_REF="$GITHUB_SHA" bash deploy/bootstrap.sh
+      - name: Run panel tests
+        run: /opt/trident-panel/runtime/node --test --test-isolation=none test/*.test.mjs
+      - name: Check service, first setup and repeat-install refusal
+        run: sudo bash test/install-smoke.sh
+      - name: Show service diagnostics on failure
+        if: failure()
+        run: sudo journalctl -u trident-panel --no-pager -n 100
