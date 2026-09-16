@@ -1,0 +1,17 @@
+data/
+runtime/
+.env
+.env.*
+!.env.example
+*.sqlite*
+*.db*
+*.key
+*.pem
+*.p12
+*.pfx
+*.log
+*.zip
+node_modules/
+coverage/
+.DS_Store
+Thumbs.db
