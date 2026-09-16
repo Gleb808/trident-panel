@@ -1,0 +1,26 @@
+[Unit]
+Description=Trident protocol configuration agent
+After=network-online.target trident-panel.service
+Wants=network-online.target
+Requires=trident-panel.service
+
+[Service]
+Type=simple
+User=root
+Group=trident
+WorkingDirectory=/opt/trident-panel
+Environment=DATA_DIR=/var/lib/trident
+Environment=RUNTIME_DIR=/var/lib/trident-agent
+ExecStart=/usr/bin/node /opt/trident-panel/src/agent.mjs
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=120
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadOnlyPaths=/var/lib/trident
+ReadWritePaths=/var/lib/trident-agent
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target
