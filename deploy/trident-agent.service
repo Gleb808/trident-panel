@@ -11,7 +11,7 @@ Group=trident
 WorkingDirectory=/opt/trident-panel
 Environment=DATA_DIR=/var/lib/trident
 Environment=RUNTIME_DIR=/var/lib/trident-agent
-ExecStart=/usr/bin/node /opt/trident-panel/src/agent.mjs
+ExecStart=/opt/trident-panel/runtime/node /opt/trident-panel/src/agent.mjs
 Restart=on-failure
 RestartSec=10
 TimeoutStopSec=120

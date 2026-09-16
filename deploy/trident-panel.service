@@ -10,7 +10,7 @@ WorkingDirectory=/opt/trident-panel
 Environment=DATA_DIR=/var/lib/trident
 Environment=AGENT_STATE=/var/lib/trident-agent/state.json
 Environment=PORT=8787
-ExecStart=/usr/bin/node /opt/trident-panel/src/server.mjs
+ExecStart=/opt/trident-panel/runtime/node /opt/trident-panel/src/server.mjs
 Restart=on-failure
 RestartSec=3
 NoNewPrivileges=true
