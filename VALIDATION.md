@@ -34,6 +34,8 @@
 
 ## Ещё не проверено
 
+Для нового bootstrap добавлен workflow [`Ubuntu 24.04 installation`](.github/workflows/ubuntu-install.yml): Bash/ShellCheck, скачивание и SHA256, установка настоящих бинарников, запуск systemd backend, HTTP readiness, первоначальное состояние и отказ повторной установки. Результат каждого запуска доступен во вкладке Actions репозитория. Этот workflow не проверяет ACME или внешний трафик трёх протоколов.
+
 - Linux/systemd установщик и реальный адаптер агента.
 - Caddy с forwardproxy naive и сервер mita.
 - ACME-сертификат, DNS, firewall, REALITY target из сети VPS.

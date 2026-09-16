@@ -67,15 +67,41 @@ node --test --test-isolation=none test/*.test.mjs
 
 ## Установка на VPS
 
-Предполагается отдельный Debian/Ubuntu VPS с systemd, доменом и публичным IPv4. Существующую чужую панель установщик не заменяет. Для других дистрибутивов проверьте пути `/usr/bin/node`, `/usr/bin/ss`, `/usr/bin/systemctl`.
+### Быстрый запуск одной командой — Ubuntu 24.04
+
+На **чистом Ubuntu 24.04 VPS, x86_64/amd64, с systemd** выполните одну команду от пользователя с sudo (под root тоже работает):
+
+```sh
+sudo apt-get update && sudo apt-get install -y ca-certificates curl && (f=$(mktemp) && curl -fSL --retry 3 https://raw.githubusercontent.com/Gleb808/trident-panel/main/deploy/bootstrap.sh -o "$f" && sudo bash "$f"; r=$?; rm -f -- "$f"; exit "$r")
+```
+
+Команда сначала полностью скачивает установщик и только после успешной загрузки запускает его. Git и npm на VPS не требуются.
+
+Установщик:
+
+1. Проверяет Ubuntu, архитектуру, systemd, отсутствие прежней установки и свободный порт backend 8787.
+2. Скачивает исходники `Gleb808/trident-panel` и официальные архивы **Node.js 24.21.0, Xray 26.3.27, mita 3.37.0, Caddy naive 2.11.2**.
+3. Проверяет закреплённые SHA256 всех четырёх архивов перед распаковкой и запуском бинарников.
+4. Устанавливает движки в `/usr/local/bin`, исходники в `/opt/trident-panel`, отдельный Node runtime в `/opt/trident-panel/runtime/node`.
+5. Запускает backend панели и ждёт успешного ответа `/healthz`.
+
+При успешном завершении откройте панель через SSH-туннель, создайте пароль администратора и настройте домен/порты по шагам ниже. Установщик выводит эти команды в терминал. Системный Node.js остаётся прежним; firewall и SSH-настройки не меняются. Агент и протоколы включаются после настройки панели.
+
+**ARM64 пока не поддерживается автоматической установкой:** у закреплённого выпуска Caddy naive нет готового ARM64-архива. Повторный запуск не перезаписывает панель, её данные или существующие движки. После прерванной установки сначала изучите сообщение об ошибке; это не автоматический механизм обновления или отката пакетов.
+
+Исходник для просмотра: [`deploy/bootstrap.sh`](deploy/bootstrap.sh). SHA256 взяты из официальных GitHub Releases, для Node — из [выпуска 24.21.0](https://nodejs.org/en/blog/release/v24.21.0). Репозиторий загружается с текущего `main`; для воспроизводимой установки можно заранее скачать bootstrap и запустить `sudo env TRIDENT_REF=FULL_COMMIT_SHA bash bootstrap.sh`.
+
+### Ручная установка
+
+Для отдельного Debian/Ubuntu VPS с systemd, доменом и публичным IPv4 можно подготовить зависимости самостоятельно. Существующую чужую панель установщик не заменяет. Для других дистрибутивов проверьте пути `/usr/bin/ss`, `/usr/bin/systemctl`.
 
 ### 1. Установить движки из официальных выпусков
 
-Установщик проекта не скачивает и не выполняет удалённые скрипты. Установите:
+Этот шаг нужен только при ручной установке; быстрый запуск выше выполняет его автоматически. Установите:
 
 | Компонент | Целевая версия | Исполняемый файл |
 |---|---|---|
-| Node.js | 24.x | `/usr/bin/node` |
+| Node.js | 24.x | `node` в PATH либо `TRIDENT_NODE_BINARY` |
 | Xray-core | 26.3.27 | `/usr/local/bin/xray` |
 | mieru server / mita | 3.37.0 | `/usr/local/bin/mita` |
 | Caddy + forwardproxy naive | 2.11.2-naive | `/usr/local/bin/caddy` |
@@ -93,13 +119,13 @@ node --test --test-isolation=none test/*.test.mjs
 
 ### 2. Установить панель
 
-Скопируйте проект на VPS, затем из его каталога:
+При ручной установке скопируйте проект на VPS, затем из его каталога:
 
 ```sh
 sudo bash deploy/install.sh
 ```
 
-Установщик создаст системного пользователя `trident`, `/opt/trident-panel`, каталоги состояния и пять systemd units. Запустится только локальный backend панели.
+Установщик создаст системного пользователя `trident`, `/opt/trident-panel`, каталоги состояния и пять systemd units. Node копируется в `/opt/trident-panel/runtime/node`, который используют панель и агент. Если Node установлен вне PATH, передайте `sudo env TRIDENT_NODE_BINARY=/absolute/path/to/node bash deploy/install.sh`. Запустится только локальный backend панели. После быстрого запуска повторять этот шаг не нужно.
 
 На своём компьютере:
 
@@ -176,7 +202,7 @@ curl --socks5-hostname 127.0.0.1:1082 https://example.com
 node scripts/backup.mjs /secure/path/trident-backup
 
 # На VPS:
-sudo -u trident env DATA_DIR=/var/lib/trident /usr/bin/node /opt/trident-panel/scripts/backup.mjs /var/lib/trident/backup
+sudo -u trident env DATA_DIR=/var/lib/trident /opt/trident-panel/runtime/node /opt/trident-panel/scripts/backup.mjs /var/lib/trident/backup
 ```
 
 Скрипт использует SQLite Backup API, поэтому корректно работает с WAL при запущенной панели. Копия содержит базу и master.key. Храните её вне VPS в защищённом месте; файлы вместе дают доступ к секретам.
@@ -188,6 +214,8 @@ sudo -u trident env DATA_DIR=/var/lib/trident /usr/bin/node /opt/trident-panel/s
 ## Обновление проекта
 
 Сделайте backup. Остановите `trident-agent` и `trident-panel`. Замените только исходники `/opt/trident-panel`, сохраняя root-владельца; не меняйте каталоги `/var/lib/trident*`. При изменении units скопируйте их в `/etc/systemd/system` и выполните `systemctl daemon-reload`. Запустите panel и agent, проверьте статус и внешний клиент. Миграции более сложных схем пока не реализованы; перед обновлением формата БД нужен отдельный план.
+
+Сохраняйте `/opt/trident-panel/runtime/node` при замене исходников. Для установки, сделанной до появления private runtime, перед обновлением units создайте его: `sudo install -D -m 0755 /usr/bin/node /opt/trident-panel/runtime/node` (исходный Node должен быть версии 24.x). Runtime обновляется отдельно после проверки нового официального релиза; системное обновление Node его не меняет.
 
 ## Ограничения v0.1
 
@@ -208,7 +236,8 @@ src/configs.mjs      генераторы клиентов/серверов, ZIP
 src/server.mjs       HTTP API и статика
 src/agent.mjs        Linux/systemd reconciliation и откат
 public/             интерфейс без сборки
-deploy/             установщик и systemd units
+deploy/             bootstrap, локальный установщик и systemd units
+.github/workflows/  проверка установки на Ubuntu 24.04
 scripts/            экспорт и резервное копирование
 test/               проверка логики и HTTP-сценария
 docs/               архитектура, пояснения и HTTP API
