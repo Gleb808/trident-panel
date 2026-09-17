@@ -50,9 +50,26 @@ test('client/server pairs agree on ports, authentication and REALITY public key;
 });
 test('ZIP exports all filenames and valid stored-entry CRC values', t => {
   const {store}=fixture(t),b=clientBundle(store.create(userInput),store.settings()),z=zip(b.files);
-  assert.equal(z.readUInt32LE(0),0x04034b50);assert.equal(z.readUInt32LE(z.length-22),0x06054b50);assert.equal(z.readUInt16LE(z.length-12),5);
+  assert.equal(z.readUInt32LE(0),0x04034b50);assert.equal(z.readUInt32LE(z.length-22),0x06054b50);assert.equal(z.readUInt16LE(z.length-12),7);
   for(const name of Object.keys(b.files))assert.ok(z.includes(Buffer.from(name)));
   assert.throws(()=>zip({'../bad':'x'}));
+});
+test('legacy settings migrate to XHTTP without changing credentials; import links match native configs', t => {
+  const {store}=fixture(t),u=store.create(userInput),old=store.settings();
+  delete old.xhttpPath; store.setMeta('settings',old);
+  const s=store.settings(); assert.equal(s.xhttpPath,'/trident'); assert.equal(s.privateKey,old.privateKey);
+  store.updateSettings({xhttpPath:'/team/access'});
+  const b=clientBundle(u,store.settings()),client=JSON.parse(b.files['vless.json']).outbounds[0],server=JSON.parse(serverFiles(store.settings(),[u])['xray.json']).inbounds[0];
+  for (const stream of [client.streamSettings,server.streamSettings]) {
+    assert.equal(stream.network,'xhttp'); assert.equal(stream.security,'reality'); assert.equal(stream.xhttpSettings.path,'/team/access');
+  }
+  assert.equal(client.settings.vnext[0].users[0].flow,undefined); assert.equal(server.settings.clients[0].flow,undefined);
+  const v=new URL(b.vlessUri); assert.equal(v.searchParams.get('type'),'xhttp'); assert.equal(v.searchParams.get('path'),'/team/access'); assert.equal(v.searchParams.has('flow'),false);
+  const n=new URL(b.naiveUri),m=new URL(b.mieruUri);
+  assert.equal(n.protocol,'naive+https:'); assert.equal(decodeURIComponent(n.password),u.secrets.naive.password);
+  assert.equal(m.protocol,'mierus:'); assert.equal(decodeURIComponent(m.password),u.secrets.mieru.password); assert.equal(m.searchParams.get('port'),'20000-20009');
+  for (const xhttpPath of ['', 'relative', '/a?b', '/a\nb', '/'+ 'x'.repeat(128)]) assert.throws(()=>store.updateSettings({xhttpPath}));
+  assert.deepEqual(store.user(u.id).secrets,u.secrets);
 });
 test('reconcile is idempotent, prevents activation on validation failure, and rolls back partial activation', async()=>{
   const snap={settings:{...defaults(),host:'proxy.test.net'},revision:'new',hasUsers:true};let calls=[];
