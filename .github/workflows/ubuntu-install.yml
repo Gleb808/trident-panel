@@ -16,21 +16,25 @@ permissions:
 jobs:
   install:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
       - name: Check Bash syntax and lint
         run: |
-          for script in deploy/bootstrap.sh deploy/install.sh test/install-smoke.sh; do bash -n "$script"; done
-          shellcheck -x -P SCRIPTDIR deploy/bootstrap.sh deploy/install.sh test/install-smoke.sh
+          for script in deploy/*.sh test/*.sh; do bash -n "$script"; done
+          shellcheck -x -P SCRIPTDIR deploy/*.sh test/*.sh
       - name: Install from this repository revision
         run: sudo env TRIDENT_REF="$GITHUB_SHA" bash deploy/bootstrap.sh
       - name: Run panel tests
         run: /opt/trident-panel/runtime/node --test --test-isolation=none test/*.test.mjs
       - name: Check service, first setup and repeat-install refusal
         run: sudo bash test/install-smoke.sh
+      - name: Update existing installation and preserve encrypted access
+        run: sudo env GITHUB_ACTIONS=true GITHUB_SHA="$GITHUB_SHA" bash test/update-smoke.sh
+      - name: Real NaiveProxy, mieru and VLESS XHTTP REALITY traffic
+        run: sudo env GITHUB_ACTIONS=true bash test/protocol-e2e.sh
       - name: Show service diagnostics on failure
         if: failure()
-        run: sudo journalctl -u trident-panel --no-pager -n 100
+        run: sudo journalctl -u trident-panel -u trident-caddy -u trident-mita -u trident-xray --no-pager -n 150
