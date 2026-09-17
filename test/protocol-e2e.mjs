@@ -23,6 +23,7 @@ const adapter=new LinuxAdapter('/var/lib/trident-agent',gid);
 function snap(users) {
   const files=serverFiles(settings,users);
   // Единственная замена production-конфига: тестовый TLS сертификат вместо ACME.
+  files.Caddyfile=files.Caddyfile.replace('  admin ', '  auto_https disable_certs\n  admin ');
   files.Caddyfile=files.Caddyfile.replaceAll(/(proxy\.test:\d+ \{\n)/g,`$1  tls ${certDir}/cert.pem ${certDir}/key.pem\n`);
   return {settings,files,revision:digest(files),hasUsers:users.length>0};
 }
@@ -66,8 +67,11 @@ try {
   console.log('PASS: generated configs activated through LinuxAdapter and real systemd units');
   const bundle=runClients(user);
   // Импорт mierus проверяет официальный parser, а не нашу обратную реализацию URL.
-  await exec(join(dir,'mieru/mieru'),['import','config',bundle.mieruUri],{env:{...process.env,MIERU_CONFIG_FILE:join(dir,'import.pb')}});
-  for(const port of [1080,1081,1082]) { await traffic(port); console.log(`PASS: authenticated native proxy traffic on SOCKS ${port}`); }
+  // mierus содержит профиль, а локальные порты и activeProfile задаются отдельно.
+  const importEnv={env:{...process.env,MIERU_CONFIG_FILE:join(dir,'import.pb')}};
+  await exec(join(dir,'mieru/mieru'),['apply','config',join(dir,'mieru.json')],importEnv);
+  await exec(join(dir,'mieru/mieru'),['import','config',bundle.mieruUri],importEnv);
+  for(const port of [1082,1080,1081]) { await traffic(port); console.log(`PASS: authenticated native proxy traffic on SOCKS ${port}`); }
   await stopClients();
   const rotated={...user,secrets:credentials()};
   const changed=await reconcile(snap([rotated]),adapter,applied); assert.equal(changed.status,'applied',changed.message);
