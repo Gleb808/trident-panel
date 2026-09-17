@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync, renameSync, chmodSy
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import net from 'node:net';
+import tls from 'node:tls';
 import { Store } from './store.mjs';
 import { serverFiles } from './configs.mjs';
 import { digest, deploymentWarnings, effectiveStatus } from './domain.mjs';
@@ -12,6 +13,33 @@ const exec = promisify(execFile);
 // Имена сервисов и пути команд заданы кодом, а не приходят из HTTP-запроса.
 const services = { naive: 'trident-caddy', vless: 'trident-xray', mieru: 'trident-mita' };
 const commands = { caddy: '/usr/local/bin/caddy', xray: '/usr/local/bin/xray', mita: '/usr/local/bin/mita', systemctl: '/usr/bin/systemctl', ss: '/usr/bin/ss' };
+/** Проверяем цель REALITY из сети VPS до изменения рабочих конфигураций. */
+export function probeRealityTarget(settings, timeoutMs = 8000) {
+  const host = settings.realitySni, port = settings.realityTargetPort;
+  return new Promise((resolve, reject) => {
+    let socket, settled = false;
+    const finish = error => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket?.destroy();
+      if (error) reject(error); else resolve();
+    };
+    // Общий таймер ограничивает также DNS lookup, а не только простой TLS-сокета.
+    const timer = setTimeout(() => finish(new Error(`Цель REALITY ${host}:${port} не ответила за ${timeoutMs / 1000} с. Проверьте DNS, исходящий TCP и доступность сайта из сети VPS`)), timeoutMs);
+    try {
+      socket = tls.connect({ host, port, servername: host, minVersion: 'TLSv1.3', ALPNProtocols: ['h2'], rejectUnauthorized: true });
+      socket.once('error', () => finish(new Error(`Не удалось установить проверенное TLS 1.3 соединение с целью REALITY ${host}:${port}. Проверьте DNS, исходящий TCP, сертификат сайта и поддержку TLS 1.3`)));
+      socket.once('secureConnect', () => {
+        if (socket.getProtocol() !== 'TLSv1.3' || socket.alpnProtocol !== 'h2') {
+          finish(new Error(`Цель REALITY ${host}:${port} не согласовала TLS 1.3 и HTTP/2 (h2). Выберите сайт с поддержкой обоих протоколов`));
+        } else finish();
+      });
+    } catch {
+      finish(new Error(`Не удалось проверить цель REALITY ${host}:${port}. Проверьте домен и порт целевого сайта`));
+    }
+  });
+}
 /** Одна read-транзакция даёт согласованный набор настроек и пользователей из SQLite. */
 export function snapshot(store) {
   store.db.exec('BEGIN');
@@ -71,6 +99,7 @@ export class LinuxAdapter {
     for (const [name, content] of Object.entries(files)) { const p = join(dir, name); writeFileSync(p + '.tmp', content, { mode: 0o640 }); chownSync(p + '.tmp', 0, this.gid); renameSync(p + '.tmp', p); }
   }
   async preflight(snap) {
+    if (snap.hasUsers) await probeRealityTarget(snap.settings);
     // Проверяем установленные версии и наличие специального модуля NaiveProxy в Caddy.
     const versions = await Promise.all([this.run('xray', ['version']), this.run('mita', ['version']), this.run('caddy', ['version'])]);
     if (!versions[0].includes('26.3.27') || !versions[1].includes('3.37.0') || !versions[2].includes('2.11.2')) throw new Error('Установленные версии отличаются от проверяемых: Xray 26.3.27, mita 3.37.0, Caddy 2.11.2');

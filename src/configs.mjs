@@ -37,7 +37,8 @@ export function serverFiles(s, users) {
   const auth = active.length ? active.map(u => `    basic_auth ${u.secrets.naive.username} ${u.secrets.naive.password}`).join('\n') : '';
   const proxy = active.length ? `  forward_proxy {\n${auth}\n    hide_ip\n    hide_via\n    probe_resistance\n    acl {\n      deny 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 ::1/128 fc00::/7 fe80::/10\n      allow all\n    }\n  }\n` : '';
   const caddy = `{\n  admin 127.0.0.1:2019\n  order forward_proxy first\n  ${s.acmeEmail ? `email ${s.acmeEmail}` : ''}\n  servers {\n    protocols h1 h2${s.naiveQuic ? ' h3' : ''}\n  }\n  log {\n    exclude http.log.error\n  }\n}\n\n:${s.naivePort}, ${s.host}:${s.naivePort} {\n${proxy}  respond "Service available" 200\n}\n\nhttps://${s.host}:${s.panelPort} {\n  reverse_proxy 127.0.0.1:8787\n}\n`;
-  const xray = { log: { loglevel: 'warning' }, inbounds: [{ tag: 'vless', listen: '0.0.0.0', port: s.vlessPort, protocol: 'vless',
+  // IPv6 wildcard в Linux/Go принимает также IPv4: A и AAAA работают на одном порту.
+  const xray = { log: { loglevel: 'warning' }, inbounds: [{ tag: 'vless', listen: '::', port: s.vlessPort, protocol: 'vless',
     settings: { clients: active.map(u => ({ id: u.secrets.vless.uuid, email: u.id, level: 0 })), decryption: 'none' },
     streamSettings: { network: 'xhttp', xhttpSettings: { path: s.xhttpPath, mode: 'auto' }, security: 'reality', realitySettings: { show: false, target: `${s.realitySni}:${s.realityTargetPort}`, xver: 0,
       serverNames: [s.realitySni], privateKey: s.privateKey, shortIds: [s.shortId] } } }],
