@@ -14,7 +14,7 @@ download_verified 'https://github.com/enfein/mieru/releases/download/v3.37.0/mie
   "$work_dir/mieru.tar.gz" '6c83b01454ab5d6628be0edc486ead659513acde22112bcca764ffcfbbed4a7b'
 tar -xJf "$work_dir/naive.tar.xz" --strip-components=1 -C "$work_dir/naive"
 tar -xzf "$work_dir/mieru.tar.gz" -C "$work_dir/mieru"
-printf '\n127.0.0.1 proxy.test reality.test\n' >> /etc/hosts
+printf '\n127.0.0.1 proxy.test reality.test cert-mismatch.test\n' >> /etc/hosts
 # Документационный адрес маршрутизируется локально; production ACL не ослабляется.
 ip address add 203.0.113.10/32 dev lo
 install -d -o trident -g trident -m 0700 /var/lib/trident-caddy/test-tls
@@ -23,4 +23,4 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=proxy.test' \
   -keyout /var/lib/trident-caddy/test-tls/key.pem -out /var/lib/trident-caddy/test-tls/cert.pem 2>/dev/null
 chown trident:trident /var/lib/trident-caddy/test-tls/*.pem
 chmod 0600 /var/lib/trident-caddy/test-tls/*.pem
-TRIDENT_E2E_DIR="$work_dir" /opt/trident-panel/runtime/node "$source_dir/test/protocol-e2e.mjs"
+NODE_EXTRA_CA_CERTS=/var/lib/trident-caddy/test-tls/cert.pem TRIDENT_E2E_DIR="$work_dir" /opt/trident-panel/runtime/node "$source_dir/test/protocol-e2e.mjs"

@@ -6,9 +6,11 @@ import { readFileSync, writeFileSync, openSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 import http from 'node:http';
 import http2 from 'node:http2';
+import tls from 'node:tls';
+import net from 'node:net';
 import { defaults, credentials, digest } from '../src/domain.mjs';
 import { serverFiles, clientBundle } from '../src/configs.mjs';
-import { LinuxAdapter, reconcile } from '../src/agent.mjs';
+import { LinuxAdapter, reconcile, probeRealityTarget } from '../src/agent.mjs';
 const exec=promisify(execFile),dir=process.env.TRIDENT_E2E_DIR;
 assert.equal(process.env.GITHUB_ACTIONS,'true'); assert.equal(process.getuid(),0); assert.ok(dir?.startsWith('/tmp/trident-e2e.'));
 const certDir='/var/lib/trident-caddy/test-tls';
@@ -40,8 +42,9 @@ async function stopClients() {
     const timer=setTimeout(()=>child.kill('SIGKILL'),2000); timer.unref();
   })));
 }
-function runClients(u) {
+function runClients(u, ipv6=false) {
   const bundle=clientBundle(u,settings);
+  if(ipv6) { const v=JSON.parse(bundle.files['vless.json']); v.outbounds[0].settings.vnext[0].address='::1'; bundle.files['vless.json']=JSON.stringify(v); }
   for(const file of ['naive.json','mieru.json','vless.json']) writeFileSync(join(dir,file),bundle.files[file],{mode:0o600});
   start('naive',join(dir,'naive/naive'),[join(dir,'naive.json')],{SSL_CERT_FILE:join(certDir,'cert.pem')});
   start('mieru',join(dir,'mieru/mieru'),['run'],{MIERU_CONFIG_JSON_FILE:join(dir,'mieru.json')});
@@ -49,6 +52,9 @@ function runClients(u) {
   return bundle;
 }
 async function traffic(port,expected=true) {
+  // Отказ доступа нельзя подтверждать ошибкой запуска локального клиента.
+  const connected=await new Promise(resolve=>{const s=net.connect(port,'127.0.0.1');s.setTimeout(1000);s.once('connect',()=>{s.destroy();resolve(true);});s.once('error',()=>resolve(false));s.once('timeout',()=>{s.destroy();resolve(false);});});
+  if(!expected) { assert.equal(connected,true,`SOCKS client ${port} must be listening before negative test`); assert.ok(clients.every(c=>c.exitCode===null&&c.signalCode===null),'Native clients must be alive'); }
   for(let attempt=0;attempt<(expected?12:1);attempt++) {
     try {
       const {stdout}=await exec('/usr/bin/curl',['--silent','--show-error','--fail','--max-time','5','--noproxy','','--socks5-hostname',`127.0.0.1:${port}`,'http://203.0.113.10:18080'],{timeout:7000});
@@ -63,6 +69,13 @@ async function traffic(port,expected=true) {
   }
 }
 try {
+  await probeRealityTarget(settings);
+  const http1=tls.createServer({key:readFileSync(join(certDir,'key.pem')),cert:readFileSync(join(certDir,'cert.pem')),minVersion:'TLSv1.3',ALPNProtocols:['http/1.1']},s=>s.end());
+  http1.on('tlsClientError',()=>{});
+  await new Promise(r=>http1.listen(0,'127.0.0.1',r));
+  await assert.rejects(probeRealityTarget({...settings,realityTargetPort:http1.address().port})); http1.close();
+  await assert.rejects(probeRealityTarget({...settings,realitySni:'cert-mismatch.test'}));
+  console.log('PASS: REALITY target TLS 1.3/h2 accepted; wrong certificate and missing h2 rejected');
   const applied=await reconcile(snap([user]),adapter); assert.equal(applied.status,'applied',applied.message);
   console.log('PASS: generated configs activated through LinuxAdapter and real systemd units');
   const bundle=runClients(user);
@@ -78,9 +91,9 @@ try {
   runClients(user); await new Promise(r=>setTimeout(r,1500));
   for(const port of [1080,1081,1082]) await traffic(port,false);
   console.log('PASS: revoked credentials rejected by all three servers');
-  await stopClients(); runClients(rotated);
+  await stopClients(); runClients(rotated,true);
   for(const port of [1080,1081,1082]) await traffic(port);
-  console.log('PASS: replacement credentials work for all three protocols');
+  console.log('PASS: replacement credentials work for all three protocols; VLESS also verified over IPv6');
   await stopClients();
   const empty=await reconcile(snap([]),adapter,changed); assert.equal(empty.status,'applied',empty.message);
   assert.ok(empty.services.filter(x=>x.protocol!=='naive').every(x=>x.state==='stopped-empty'));
