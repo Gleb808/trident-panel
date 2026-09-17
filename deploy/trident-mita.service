@@ -4,8 +4,14 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=trident
-Group=trident
+User=mita
+Group=mita
+SupplementaryGroups=trident
+RuntimeDirectory=trident-mita
+RuntimeDirectoryMode=0700
+StateDirectory=mita
+StateDirectoryMode=0700
+Environment=MITA_UDS_PATH=/run/trident-mita/mita.sock
 Environment=MITA_CONFIG_JSON_FILE=/var/lib/trident-agent/current/mita.json
 ExecStart=/usr/local/bin/mita run
 Restart=on-failure
@@ -14,6 +20,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

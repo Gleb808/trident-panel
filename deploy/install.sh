@@ -15,6 +15,8 @@ source_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 if [[ -e /opt/trident-panel || -L /opt/trident-panel ]]; then echo '/opt/trident-panel exists. Back up and use the documented update procedure.' >&2; exit 1; fi
 [[ -z $(ss -H -ltn 'sport = :8787') ]] || { echo 'TCP port 8787 is already in use.' >&2; exit 1; }
 id trident >/dev/null 2>&1 || useradd --system --home-dir /var/lib/trident --shell /usr/sbin/nologin trident
+# mita проверяет собственный Unix user/group при создании RPC socket.
+id mita >/dev/null 2>&1 || useradd --system --user-group --home-dir /var/lib/mita --shell /usr/sbin/nologin mita
 install -d -m 0755 /opt/trident-panel
 install -d -m 0755 /opt/trident-panel/runtime
 install -m 0755 "$node_binary" /opt/trident-panel/runtime/node
