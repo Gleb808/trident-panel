@@ -1,6 +1,6 @@
 # TRIDENT — NaiveProxy + mieru + VLESS
 
-**[Установить на Ubuntu 24.04 одной командой](#quick-install)** · [Открыть установщик](deploy/bootstrap.sh)
+**[Установить на Ubuntu 24.04 одной командой](#quick-install)** · **[Обновить установленную панель](#update)** · [Открыть установщик](deploy/bootstrap.sh)
 
 Самостоятельная панель для одного Linux VPS. Один человек получает три независимых доступа; порты закреплены за протоколами. Интерфейс на русском, backend на Node.js 24, база SQLite. npm-зависимостей нет.
 
@@ -48,7 +48,7 @@ sudo apt-get update && sudo apt-get install -y ca-certificates curl && (f=$(mkte
 - Вход администратора, первичная настройка через localhost/SSH-туннель.
 - Пользователи: создание, редактирование, поиск, фильтры, срок действия, отключение, удаление, продление на 30 дней.
 - Независимые пароли NaiveProxy/mieru и UUID VLESS; перевыпуск комплекта и отзыв ссылки выдачи.
-- ZIP с `naive.json`, `mieru.json`, `vless.json`, `vless.txt`, инструкцией.
+- ZIP с тремя ссылками импорта (`naive.txt`, `mieru.txt`, `vless.txt`), тремя нативными JSON и инструкцией. VLESS использует **XHTTP + REALITY**, без Vision flow.
 - Персональная страница `/access#TOKEN`: выдаёт конфиги только для активного пользователя и после подтверждения актуальной конфигурации агентом.
 - Серверные конфиги Caddy, mita, Xray, проверка конфликтов портов.
 - Шифрование записей AES-256-GCM, scrypt для пароля администратора, HttpOnly/SameSite-cookie, проверка Origin/Host и CSRF, ограничение частоты входа.
@@ -84,7 +84,7 @@ node --test --test-isolation=none test/*.test.mjs
 | Назначение | По умолчанию |
 |---|---|
 | NaiveProxy | 443/TCP; опционально 443/UDP |
-| VLESS + REALITY + Vision | 8443/TCP |
+| VLESS + XHTTP + REALITY | 8443/TCP |
 | mieru / mita | 20000–20009/TCP |
 | Панель HTTPS | 9443/TCP |
 | Caddy ACME | 80/TCP |
@@ -218,17 +218,52 @@ sudo -u trident env DATA_DIR=/var/lib/trident /opt/trident-panel/runtime/node /o
 
 Серверные конфиги, клиентские ZIP и `manifest.json` агента содержат секреты. Их нельзя коммитить или публиковать. В поставку проекта они не включены.
 
-## Обновление проекта
+<a id="update"></a>
 
-Сделайте backup. Остановите `trident-agent` и `trident-panel`. Замените только исходники `/opt/trident-panel`, сохраняя root-владельца; не меняйте каталоги `/var/lib/trident*`. При изменении units скопируйте их в `/etc/systemd/system` и выполните `systemctl daemon-reload`. Запустите panel и agent, проверьте статус и внешний клиент. Миграции более сложных схем пока не реализованы; перед обновлением формата БД нужен отдельный план.
+## Обновление установленной панели
 
-Сохраняйте `/opt/trident-panel/runtime/node` при замене исходников. Для установки, сделанной до появления private runtime, перед обновлением units создайте его: `sudo install -D -m 0755 /usr/bin/node /opt/trident-panel/runtime/node` (исходный Node должен быть версии 24.x). Runtime обновляется отдельно после проверки нового официального релиза; системное обновление Node его не меняет.
+На VPS с уже установленным TRIDENT:
+
+```sh
+(f=$(mktemp) && curl -fSL --retry 3 https://raw.githubusercontent.com/Gleb808/trident-panel/main/deploy/update.sh -o "$f" && sudo bash "$f"; r=$?; rm -f -- "$f"; exit "$r")
+```
+
+Обновитель скачивает исходники, проверяет синтаксис, останавливает panel/agent, сохраняет исходники, systemd units и согласованную копию базы с master.key в закрытом каталоге /var/backups/trident-update.*. Затем обновляет код и units, создаёт служебного пользователя mita и запускает панель. Ранее работающий агент возобновляется. При ошибке обновления исходники и units восстанавливаются; база и сертификаты остаются на месте. Путь резервной копии выводится в терминал. Движки и private Node runtime этим скриптом не обновляются.
+
+**После перехода с v0.1.0 повторно скачайте VLESS-конфиг:** транспорт изменён с RAW/Vision на XHTTP + REALITY; flow должен быть пустым. UUID, REALITY-ключи, пароли NaiveProxy/mieru и пользователи сохраняются. Старые настройки получают путь XHTTP /trident.
+
+Если агент ещё не включён, после настройки домена выполните:
+
+```sh
+sudo systemctl enable --now trident-agent
+```
+
+Дождитесь подтверждения применения в панели. При ошибке выполните:
+
+```sh
+sudo journalctl -u trident-agent -u trident-caddy -u trident-mita -u trident-xray -n 100 --no-pager
+```
+
+**Для NaiveProxy обязателен настоящий домен**, направленный на VPS, и доверенный TLS-сертификат. Убедитесь, что A/AAAA указывают на этот сервер, TCP 80 доступен для ACME, а протокольные порты открыты в firewall VPS и провайдера. Один IP вместо домена не завершает настройку. REALITY SNI — отдельный доступный с VPS сайт с TLS 1.3 и h2.
+
+### Импорт в клиенты
+
+| Файл | Назначение |
+|---|---|
+| naive.txt | Ссылка naive+https для приложения с поддержкой NaiveProxy |
+| mieru.txt | Официальная текстовая ссылка mierus |
+| vless.txt | VLESS URI, XHTTP + REALITY, mode=auto, flow пустой |
+| naive.json | Нативный CLI naive |
+| mieru.json | Нативный CLI mieru 3.37.0 |
+| vless.json | Нативный Xray 26.3.27 |
+
+Поддержка одной VLESS-ссылки не означает поддержку XHTTP в приложении. Нативный JSON каждого движка нельзя автоматически считать конфигом sing-box, Mihomo или любого мобильного клиента. Команды запуска находятся в README.txt комплекта.
 
 ## Ограничения v0.1
 
 - Один сервер, один администратор; нет биллинга, общей квоты трафика, ролей и ограничения числа устройств.
-- Нет обещаний совместимости с любым мобильным приложением: нативные JSON и VLESS URI — начальная точка. QR и автоматическая подписка для конкретных клиентов — следующий этап.
-- mieru выдаётся как полный JSON. `mieru://` можно получить штатным `mieru export config` после импорта; собственной protobuf-реализации экспорта здесь нет.
+- Нет обещаний совместимости с любым мобильным приложением: ссылки импорта и нативные JSON требуют поддержки протоколов выбранным клиентом. QR и автоматическая подписка для конкретных клиентов — следующий этап.
+- mieru выдаётся как нативный JSON и официальная текстовая ссылка `mierus://`. Формат `mieru://` с protobuf здесь самостоятельно не реализуется.
 - QUIC выключен по умолчанию, включение должно быть проверено отдельно. Полный набор возможностей протоколов в панель не вынесен.
 - Полные перезапуски движков; горячее добавление пользователей через Xray gRPC / Caddy API / mita reload — следующая оптимизация после реального стенда.
 - Нет собственных метрик трафика и общего гигабайтного лимита; интерфейс не подставляет выдуманные показатели.
@@ -243,7 +278,7 @@ src/configs.mjs      генераторы клиентов/серверов, ZIP
 src/server.mjs       HTTP API и статика
 src/agent.mjs        Linux/systemd reconciliation и откат
 public/             интерфейс без сборки
-deploy/             bootstrap, локальный установщик и systemd units
+deploy/             bootstrap, обновитель, локальный установщик и systemd units
 .github/workflows/  проверка установки на Ubuntu 24.04
 scripts/            экспорт и резервное копирование
 test/               проверка логики и HTTP-сценария
@@ -265,6 +300,10 @@ docs/               архитектура, пояснения и HTTP API
 - [mieru client configuration / sharing](https://github.com/enfein/mieru/blob/main/docs/client-install.md)
 - [mieru server CLI implementation](https://github.com/enfein/mieru/blob/v3.37.0/pkg/cli/server.go)
 - [Xray 26.3.27 VLESS configuration parser](https://github.com/XTLS/Xray-core/blob/v26.3.27/infra/conf/vless.go)
+- [XHTTP + REALITY: официальные примеры](https://github.com/XTLS/Xray-examples/tree/main/VLESS-XHTTP-Reality)
+- [mierus: официальный parser](https://github.com/enfein/mieru/blob/v3.37.0/pkg/appctl/url.go)
 - [Xray API](https://xtls.github.io/en/config/api.html)
 
 Для Xray использована схема закреплённого релиза (`clients`, `network`, `vnext`), а не непроверенная схема изменяющейся документации ветки main.
+
+При разборе несовместимостей изучена [Panel-Naive-Mieru-by-RIXXX](https://github.com/cwash797-cmd/Panel-Naive-Mieru-by-RIXXX); формат конфигов и исправление службы mita сверены с исходниками самих движков.
