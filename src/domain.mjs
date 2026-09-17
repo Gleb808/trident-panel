@@ -15,7 +15,7 @@ export function keys() {
 export function defaults() {
   return { host: 'proxy.example.com', naivePort: 443, naiveQuic: false, vlessPort: 8443,
     mieruStart: 20000, mieruEnd: 20009, panelPort: 9443, realitySni: 'www.microsoft.com',
-    realityTargetPort: 443, acmeEmail: '', ...keys() };
+    realityTargetPort: 443, xhttpPath: '/trident', acmeEmail: '', ...keys() };
 }
 // Разрешаем только доменное имя: URL, IP, порт и вставки в текстовый Caddyfile сюда не проходят.
 export function validDomain(value) {
@@ -24,7 +24,8 @@ export function validDomain(value) {
 }
 export function validateSettings(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) fail('Некорректные настройки');
-  const s = { ...input };
+  const s = { xhttpPath: '/trident', ...input };
+  if (typeof s.xhttpPath !== 'string' || !/^\/[A-Za-z0-9/_-]{0,127}$/.test(s.xhttpPath)) fail('XHTTP path: путь от /, до 128 символов, латиница, цифры, /, _ и -');
   for (const field of ['host', 'realitySni']) {
     if (!validDomain(s[field])) fail(field === 'host' ? 'Укажите домен сервера без https:// и порта' : 'Укажите корректный домен REALITY');
     s[field] = s[field].toLowerCase();

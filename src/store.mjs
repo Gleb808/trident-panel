@@ -50,10 +50,11 @@ export class Store {
     this.db.exec('BEGIN IMMEDIATE');
     try { const r = fn(); this.db.exec('COMMIT'); return r; } catch (e) { this.db.exec('ROLLBACK'); throw e; }
   }
-  settings() { return this.getMeta('settings'); }
+  // Старые базы получают стабильный XHTTP path без смены существующих ключей.
+  settings() { return { xhttpPath: '/trident', ...this.getMeta('settings') }; }
   updateSettings(input) {
     // Белый список не позволяет API произвольно подменить серверный ключ REALITY.
-    const old = this.settings(), allowed = ['host', 'naivePort', 'naiveQuic', 'vlessPort', 'mieruStart', 'mieruEnd', 'panelPort', 'realitySni', 'realityTargetPort', 'acmeEmail'];
+    const old = this.settings(), allowed = ['host', 'naivePort', 'naiveQuic', 'vlessPort', 'mieruStart', 'mieruEnd', 'panelPort', 'realitySni', 'realityTargetPort', 'xhttpPath', 'acmeEmail'];
     const next = { ...old };
     for (const k of allowed) if (Object.hasOwn(input, k)) next[k] = input[k];
     validateSettings(next);

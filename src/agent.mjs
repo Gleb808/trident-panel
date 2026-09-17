@@ -42,7 +42,7 @@ export async function reconcile(snap, adapter, previous = null) {
     changed = true;
     await adapter.activate(snap);
     const health = await adapter.health(snap);
-    if (!health.every(x => x.ok)) throw new Error('Не все сервисы запустились или открыли ожидаемые порты');
+    if (!health.every(x => x.ok)) throw new Error(`Не запустились сервисы: ${health.filter(x => !x.ok).map(x => services[x.protocol] || x.protocol).join(', ')}. Проверьте journalctl -u ИМЯ_СЛУЖБЫ -n 50`);
     await adapter.commit(snap);
     return { status: 'applied', appliedRevision: snap.revision, services: health,
       message: 'Конфигурация применена. Процессы и TCP-порты проверены; внешнее подключение не проверялось.' };
@@ -59,7 +59,10 @@ export class LinuxAdapter {
     // execFile передаёт аргументы без shell. Вывод ошибки команды не отдаём в панель:
     // диагностический вывод серверных бинарников может содержать секреты конфигурации.
     try { return (await exec(commands[tool], args, { timeout: 25000, maxBuffer: 1024 * 1024, encoding: 'utf8', env: { ...process.env, HOME: join(this.runtime, 'validation-home') } })).stdout; }
-    catch { throw new Error(`Ошибка команды ${name}; проверьте бинарник и конфигурацию на VPS`); }
+    catch (e) {
+      const action = tool === 'systemctl' ? `${name} ${args.slice(0, 2).join(' ')}` : name;
+      throw new Error(`Ошибка команды ${action} (код ${Number.isInteger(e.code) ? e.code : 'timeout/exec'}); проверьте журнал соответствующей службы на VPS`);
+    }
   }
   writeFiles(dir, files) {
     // Каждый файл заменяется через rename отдельно. Весь набор файлов не атомарен;
