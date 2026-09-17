@@ -198,6 +198,8 @@ ID, секреты и токен создаёт сервер. Поля секр�
 ```json
 {
   "files": {
+    "naive.txt": "naive+https://...",
+    "mieru.txt": "mierus://...",
     "naive.json": "JSON_TEXT",
     "mieru.json": "JSON_TEXT",
     "vless.json": "JSON_TEXT",
@@ -250,7 +252,7 @@ curl --silent --show-error --fail-with-body \
 }
 ```
 
-В реальном ответе `files` содержит все пять файлов. При `download: true` возвращается ZIP `trident-access.zip`.
+В реальном ответе `files` содержит все семь файлов. При `download: true` возвращается ZIP `trident-access.zip`.
 
 Условия выдачи:
 
@@ -320,3 +322,7 @@ curl --silent --show-error --fail-with-body \
 ## 9. Чего API пока не предоставляет
 
 Нет маршрутов для смены пароля администратора, ролей, токенов интеграций, метрик трафика, квот, выбора устройств, горячего применения, управления несколькими серверами и версионированного `/api/v1`. Это внутреннее API текущей панели; при расширении проекта изменения схем нужно согласовывать с интерфейсом и тестами.
+
+### XHTTP (v0.1.1)
+
+GET/PUT settings поддерживают xhttpPath: путь от / длиной 1–128 символов; латиница, цифры, /, _ и -. Начальное значение /trident. Bundle дополнительно возвращает naiveUri и mieruUri, а vlessUri содержит type=xhttp, path, mode=auto и security=reality без flow. Устаревшие RAW/Vision ссылки нужно экспортировать повторно.
